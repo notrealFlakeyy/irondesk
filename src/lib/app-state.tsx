@@ -6,10 +6,15 @@ import type {
   AppData,
   AppSettings,
   CheckoutCartParams,
+  CreateRegisterNoteParams,
   CreateSpecialOrderParams,
+  CreatePurchaseOrderParams,
   Customer,
+  HoldCartParams,
   Order,
+  PurchaseOrder,
   Product,
+  RegisterNote,
   Supplier,
 } from '@/types';
 
@@ -20,12 +25,18 @@ type AppStateContextValue = AppData & {
   dataSource: 'empty' | 'supabase';
   refreshData: () => Promise<void>;
   checkoutCart: (params: CheckoutCartParams) => Promise<{ receiptId: string; total: number }>;
+  holdCart: (params: HoldCartParams) => Promise<{ heldCartId: string }>;
+  resumeHeldCart: (heldCartId: string) => Promise<{ cart: AppData['heldCartItems'][string]; customerId?: string; label: string }>;
+  deleteHeldCart: (heldCartId: string) => Promise<void>;
   createSpecialOrder: (params: CreateSpecialOrderParams) => Promise<{ orderId: string; total: number }>;
   updateOrderStatus: (orderId: string, status: Order['status']) => Promise<void>;
   addProduct: (product: Product) => Promise<void>;
   updateProduct: (product: Product) => Promise<void>;
   addCustomer: (customer: Customer) => Promise<void>;
   addSupplier: (supplier: Supplier) => Promise<void>;
+  addRegisterNote: (params: CreateRegisterNoteParams) => Promise<RegisterNote>;
+  createPurchaseOrder: (params: CreatePurchaseOrderParams) => Promise<{ purchaseOrderId: string; total: number }>;
+  updatePurchaseOrderStatus: (purchaseOrderId: string, status: PurchaseOrder['status']) => Promise<void>;
   updateSettings: (settings: AppSettings) => Promise<void>;
   seedDemoData: () => Promise<void>;
   resetData: () => Promise<void>;
@@ -47,11 +58,15 @@ function cloneInitialState() {
     customers: [],
     orders: [],
     suppliers: [],
+    heldCarts: [],
+    registerNotes: [],
+    integrationRuns: [],
     transactions: [],
     transactionLines: {},
     customerPurchases: {},
     orderItems: {},
     orderTimelines: {},
+    heldCartItems: {},
   };
 }
 
@@ -127,6 +142,76 @@ export function AppStateProvider({ children }: PropsWithChildren) {
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to complete checkout.';
+      setBackendError(message);
+      throw new Error(message);
+    } finally {
+      setSyncing(false);
+    }
+  }, []);
+
+  const holdCart = useCallback(async (params: HoldCartParams) => {
+    setSyncing(true);
+
+    try {
+      const payload = await requestJson<AppData>('/api/held-carts', {
+        method: 'POST',
+        body: JSON.stringify(params),
+      });
+      setData(payload.data);
+      setBackendError(null);
+      setDataSource('supabase');
+
+      return {
+        heldCartId: String(payload.meta?.heldCartId ?? ''),
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to hold the cart.';
+      setBackendError(message);
+      throw new Error(message);
+    } finally {
+      setSyncing(false);
+    }
+  }, []);
+
+  const resumeHeldCart = useCallback(async (heldCartId: string) => {
+    setSyncing(true);
+
+    try {
+      const payload = await requestJson<AppData>(`/api/held-carts/${heldCartId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ action: 'resume' }),
+      });
+      setData(payload.data);
+      setBackendError(null);
+      setDataSource('supabase');
+
+      return {
+        cart: (payload.meta?.cart as AppData['heldCartItems'][string]) ?? [],
+        customerId: typeof payload.meta?.customerId === 'string' ? payload.meta.customerId : undefined,
+        label: String(payload.meta?.label ?? ''),
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to resume the held cart.';
+      setBackendError(message);
+      throw new Error(message);
+    } finally {
+      setSyncing(false);
+    }
+  }, []);
+
+  const deleteHeldCart = useCallback(async (heldCartId: string) => {
+    setSyncing(true);
+
+    try {
+      const payload = await requestJson<AppData>(`/api/held-carts/${heldCartId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ action: 'delete' }),
+      });
+      setData(payload.data);
+      setBackendError(null);
+      setDataSource('supabase');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to remove the held cart.';
       setBackendError(message);
       throw new Error(message);
     } finally {
@@ -259,6 +344,79 @@ export function AppStateProvider({ children }: PropsWithChildren) {
     }
   }, []);
 
+  const addRegisterNote = useCallback(async (params: CreateRegisterNoteParams) => {
+    setSyncing(true);
+
+    try {
+      const payload = await requestJson<AppData>('/api/register-notes', {
+        method: 'POST',
+        body: JSON.stringify(params),
+      });
+      setData(payload.data);
+      setBackendError(null);
+      setDataSource('supabase');
+
+      return (payload.meta?.note as RegisterNote | undefined) ?? {
+        id: '',
+        body: params.body,
+        createdAt: new Date().toISOString(),
+        author: params.author ?? 'Register staff',
+        registerLabel: params.registerLabel ?? 'Register 1',
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to save the register note.';
+      setBackendError(message);
+      throw new Error(message);
+    } finally {
+      setSyncing(false);
+    }
+  }, []);
+
+  const createPurchaseOrder = useCallback(async (params: CreatePurchaseOrderParams) => {
+    setSyncing(true);
+
+    try {
+      const payload = await requestJson<AppData>('/api/purchase-orders', {
+        method: 'POST',
+        body: JSON.stringify(params),
+      });
+      setData(payload.data);
+      setBackendError(null);
+      setDataSource('supabase');
+
+      return {
+        purchaseOrderId: String(payload.meta?.purchaseOrderId ?? ''),
+        total: Number(payload.meta?.total ?? 0),
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to create the purchase order.';
+      setBackendError(message);
+      throw new Error(message);
+    } finally {
+      setSyncing(false);
+    }
+  }, []);
+
+  const updatePurchaseOrderStatus = useCallback(async (purchaseOrderId: string, status: PurchaseOrder['status']) => {
+    setSyncing(true);
+
+    try {
+      const payload = await requestJson<AppData>(`/api/purchase-orders/${purchaseOrderId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      });
+      setData(payload.data);
+      setBackendError(null);
+      setDataSource('supabase');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to update the purchase order.';
+      setBackendError(message);
+      throw new Error(message);
+    } finally {
+      setSyncing(false);
+    }
+  }, []);
+
   const updateSettings = useCallback(async (settings: AppSettings) => {
     setSyncing(true);
 
@@ -326,12 +484,18 @@ export function AppStateProvider({ children }: PropsWithChildren) {
       dataSource,
       refreshData,
       checkoutCart,
+      holdCart,
+      resumeHeldCart,
+      deleteHeldCart,
       createSpecialOrder,
       updateOrderStatus,
       addProduct,
       updateProduct,
       addCustomer,
       addSupplier,
+      addRegisterNote,
+      createPurchaseOrder,
+      updatePurchaseOrderStatus,
       updateSettings,
       seedDemoData,
       resetData,
@@ -342,15 +506,21 @@ export function AppStateProvider({ children }: PropsWithChildren) {
       addSupplier,
       backendError,
       checkoutCart,
+      deleteHeldCart,
+      createPurchaseOrder,
       createSpecialOrder,
       data,
       dataSource,
       hydrated,
+      holdCart,
       refreshData,
       resetData,
+      resumeHeldCart,
       seedDemoData,
       syncing,
+      addRegisterNote,
       updateOrderStatus,
+      updatePurchaseOrderStatus,
       updateProduct,
       updateSettings,
     ]

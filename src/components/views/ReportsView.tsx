@@ -1,8 +1,9 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useEffectEvent, useMemo, useState } from 'react';
 import { Badge, Btn, Mono, Panel, PanelHeader, Select, Table, TD, TR } from '@/components/ui';
 import { useAppState } from '@/lib/app-state';
+import { downloadTextFile, openPrintWindow, toCsv } from '@/lib/browser-utils';
 import { STAFF_PERFORMANCE } from '@/lib/data';
 import { fmt } from '@/lib/utils';
 import { ToastTone, TopProductRow, View, VatRow } from '@/types';
@@ -86,6 +87,133 @@ export default function ReportsView({
     };
   }, [transactionLines, transactions]);
 
+  const staffRows = useMemo(
+    () =>
+      STAFF_PERFORMANCE.map((person, index) => ({
+        name: person.name,
+        transactions: index === 0 ? leadTransactions : person.transactions,
+        revenue: index === 0 ? leadRevenue : person.revenue,
+        averageBasket: index === 0 ? leadAverageBasket : person.averageBasket,
+      })),
+    [leadAverageBasket, leadRevenue, leadTransactions]
+  );
+
+  const exportCsv = () => {
+    const summaryCsv = toCsv(
+      ['Metric', 'Value'],
+      summary.map((stat) => [stat.label, stat.value])
+    );
+    const vatCsv = toCsv(
+      ['Period', 'Net Sales', 'VAT 21%', 'Total'],
+      vatRows.map((row) => [row.period, row.net.toFixed(2), row.vat.toFixed(2), row.total.toFixed(2)])
+    );
+    const productsCsv = toCsv(
+      ['Product', 'Units Sold', 'Revenue', 'Margin %'],
+      topProducts.map((product) => [product.name, product.units, product.revenue.toFixed(2), product.margin])
+    );
+    const staffCsv = toCsv(
+      ['Staff', 'Transactions', 'Revenue', 'Avg Basket'],
+      staffRows.map((row) => [row.name, row.transactions, row.revenue.toFixed(2), row.averageBasket.toFixed(2)])
+    );
+
+    downloadTextFile(
+      `irondesk-reports-${range}.csv`,
+      ['Revenue Summary', summaryCsv, '', 'VAT Report', vatCsv, '', 'Top Products', productsCsv, '', 'Staff Performance', staffCsv].join('\n'),
+      'text/csv;charset=utf-8'
+    );
+    onNotify('CSV export downloaded for the current reporting range.', 'success');
+  };
+
+  const exportVatCsv = () => {
+    downloadTextFile(
+      `irondesk-vat-${range}.csv`,
+      toCsv(
+        ['Period', 'Net Sales', 'VAT 21%', 'Total'],
+        vatRows.map((row) => [row.period, row.net.toFixed(2), row.vat.toFixed(2), row.total.toFixed(2)])
+      ),
+      'text/csv;charset=utf-8'
+    );
+    onNotify('VAT export downloaded for your accountant.', 'success');
+  };
+
+  const exportPdf = () => {
+    openPrintWindow(
+      `IronDesk Reports ${range}`,
+      `
+        <h1>IronDesk Reporting Pack</h1>
+        <p class="meta">Range: ${range.replace(/-/g, ' ')}</p>
+        <div class="section">
+          <h2>Revenue Summary</h2>
+          <table>
+            <thead><tr><th>Metric</th><th>Value</th></tr></thead>
+            <tbody>
+              ${summary.map((stat) => `<tr><td>${stat.label}</td><td class="mono">${stat.value}</td></tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+        <div class="section">
+          <h2>VAT Report</h2>
+          <table>
+            <thead><tr><th>Period</th><th>Net Sales</th><th>VAT 21%</th><th>Total</th></tr></thead>
+            <tbody>
+              ${vatRows
+                .map(
+                  (row) =>
+                    `<tr><td>${row.period}</td><td class="mono">${fmt(row.net)}</td><td class="mono accent">${fmt(row.vat)}</td><td class="mono">${fmt(row.total)}</td></tr>`
+                )
+                .join('')}
+            </tbody>
+          </table>
+        </div>
+        <div class="section">
+          <h2>Top Products</h2>
+          <table>
+            <thead><tr><th>Product</th><th>Units Sold</th><th>Revenue</th><th>Margin %</th></tr></thead>
+            <tbody>
+              ${topProducts
+                .map(
+                  (product) =>
+                    `<tr><td>${product.name}</td><td class="mono">${product.units}</td><td class="mono accent">${fmt(product.revenue)}</td><td class="mono">${product.margin}%</td></tr>`
+                )
+                .join('')}
+            </tbody>
+          </table>
+        </div>
+        <div class="section">
+          <h2>Staff Performance</h2>
+          <table>
+            <thead><tr><th>Staff</th><th>Transactions</th><th>Revenue</th><th>Avg Basket</th></tr></thead>
+            <tbody>
+              ${staffRows
+                .map(
+                  (row) =>
+                    `<tr><td>${row.name}</td><td class="mono">${row.transactions}</td><td class="mono accent">${fmt(row.revenue)}</td><td class="mono">${fmt(row.averageBasket)}</td></tr>`
+                )
+                .join('')}
+            </tbody>
+          </table>
+        </div>
+      `
+    );
+    onNotify('Printable report pack opened.', 'success');
+  };
+
+  const onContextAction = useEffectEvent((view?: View) => {
+    if (view === 'reports') {
+      exportPdf();
+    }
+  });
+
+  useEffect(() => {
+    const handleContextAction = (event: Event) => {
+      const detail = (event as CustomEvent<{ view?: View }>).detail;
+      onContextAction(detail?.view);
+    };
+
+    window.addEventListener('irondesk:context-action', handleContextAction);
+    return () => window.removeEventListener('irondesk:context-action', handleContextAction);
+  }, []);
+
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <div className="flex flex-col gap-2.5 border-b bg-[var(--bg2)] px-5 py-3.5 sm:flex-row sm:items-center">
@@ -96,10 +224,10 @@ export default function ReportsView({
           <option value="year">Year to Date</option>
         </Select>
         <div className="ml-auto flex flex-wrap gap-2">
-          <Btn onClick={() => onNotify('CSV export queued for the current reporting range.', 'success')}>
+          <Btn onClick={exportCsv}>
             Export CSV
           </Btn>
-          <Btn onClick={() => onNotify('PDF report pack generated from live local data.', 'success')}>
+          <Btn onClick={exportPdf}>
             Export PDF
           </Btn>
         </div>
@@ -125,7 +253,7 @@ export default function ReportsView({
 
           <Panel>
             <PanelHeader title="VAT Report" subtitle="Quarter filing support">
-              <Btn size="sm" onClick={() => onNotify('VAT export prepared for your accountant.', 'success')}>
+              <Btn size="sm" onClick={exportVatCsv}>
                 Export
               </Btn>
             </PanelHeader>

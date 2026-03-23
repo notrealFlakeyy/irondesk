@@ -13,7 +13,7 @@ export default function SettingsView({
   onNav: (view: View) => void;
   onNotify: (message: string, tone?: ToastTone) => void;
 }) {
-  const { settings, updateSettings, resetData, seedDemoData } = useAppState();
+  const { settings, integrationRuns, updateSettings, resetData, seedDemoData } = useAppState();
   const [activeSection, setActiveSection] = useState<SettingsSection>('Store Info');
   const [draftSettings, setDraftSettings] = useState<AppSettings>(settings);
   const [savingSettings, setSavingSettings] = useState(false);
@@ -51,6 +51,9 @@ export default function SettingsView({
       ),
     }));
   };
+
+  const lastRunFor = (provider: Integration['provider']) =>
+    integrationRuns.find((run) => run.provider === provider);
 
   const renderRow = (label: string, hint: string, control: React.ReactNode) => (
     <div className="flex flex-col gap-3 border-b px-[18px] py-3.5 last:border-b-0 lg:flex-row lg:items-center lg:justify-between">
@@ -257,31 +260,86 @@ export default function SettingsView({
 
     if (activeSection === 'Integrations') {
       return (
-        <div className="rounded-sm border bg-[var(--bg2)]">
-          <div className="border-b px-[18px] py-3.5 font-display text-[14px] font-semibold uppercase tracking-[0.12em] text-[var(--text)]">
-            Integrations
+        <div className="space-y-4">
+          <div className="rounded-sm border bg-[var(--bg2)]">
+            <div className="border-b px-[18px] py-3.5 font-display text-[14px] font-semibold uppercase tracking-[0.12em] text-[var(--text)]">
+              Integrations
+            </div>
+            {draftSettings.integrations.map((integration) => {
+              const lastRun = lastRunFor(integration.provider);
+
+              return renderRow(
+                integration.name,
+                `${integration.hint}${lastRun ? ` Last run: ${lastRun.message}` : ''}`,
+                <div className="flex items-center justify-end gap-2">
+                  {lastRun ? (
+                    <Badge
+                      variant={
+                        lastRun.status === 'success'
+                          ? 'green'
+                          : lastRun.status === 'failed'
+                            ? 'red'
+                            : 'gray'
+                      }
+                    >
+                      {lastRun.status}
+                    </Badge>
+                  ) : null}
+                  <Btn
+                    size="sm"
+                    variant={integration.connected ? 'success' : 'default'}
+                    onClick={() => {
+                      setIntegrationState(integration.name);
+                      onNotify(
+                        integration.connected
+                          ? `${integration.name} disconnected. Save changes to apply it.`
+                          : `${integration.name} enabled. Save changes to apply it.`,
+                        integration.connected ? 'info' : 'success'
+                      );
+                    }}
+                  >
+                    {integration.connected ? 'Enabled' : 'Enable'}
+                  </Btn>
+                </div>
+              );
+            })}
           </div>
-          {draftSettings.integrations.map((integration) =>
-            renderRow(
-              integration.name,
-              integration.hint,
-              <Btn
-                size="sm"
-                variant={integration.connected ? 'success' : 'default'}
-                onClick={() => {
-                  setIntegrationState(integration.name);
-                  onNotify(
-                    integration.connected
-                      ? `${integration.name} disconnected locally.`
-                      : `${integration.name} connected locally.`,
-                    integration.connected ? 'info' : 'success'
-                  );
-                }}
-              >
-                {integration.connected ? 'Connected' : 'Connect'}
-              </Btn>
-            )
-          )}
+
+          <div className="rounded-sm border bg-[var(--bg2)]">
+            <div className="border-b px-[18px] py-3.5 font-display text-[14px] font-semibold uppercase tracking-[0.12em] text-[var(--text)]">
+              Sync Log
+            </div>
+            <div className="max-h-[280px] overflow-y-auto">
+              {integrationRuns.length === 0 ? (
+                <div className="px-[18px] py-4 text-[12px] text-[var(--text3)]">
+                  No provider activity has been logged yet.
+                </div>
+              ) : (
+                integrationRuns.slice(0, 10).map((run) => (
+                  <div key={run.id} className="border-b px-[18px] py-3 last:border-b-0">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="font-display text-[13px] font-semibold uppercase tracking-[0.06em] text-[var(--text)]">
+                        {run.provider}
+                      </div>
+                      <Badge
+                        variant={
+                          run.status === 'success' ? 'green' : run.status === 'failed' ? 'red' : 'gray'
+                        }
+                      >
+                        {run.status}
+                      </Badge>
+                    </div>
+                    <div className="mt-1 text-[12px] text-[var(--text2)]">{run.message}</div>
+                    <div className="mt-1 font-mono-iron text-[10px] uppercase tracking-[0.12em] text-[var(--text3)]">
+                      {run.event}
+                      {run.targetId ? ` / ${run.targetId}` : ''}
+                      {run.reference ? ` / ${run.reference}` : ''}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
         </div>
       );
     }

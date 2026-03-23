@@ -72,34 +72,43 @@ function HomeShellInner({ userEmail }: { userEmail: string }) {
   };
 
   const handleAction = () => {
+    const triggerContextAction = () => {
+      window.dispatchEvent(new CustomEvent('irondesk:context-action', { detail: { view } }));
+    };
+
     if (view === 'dashboard') {
       handleNav('orders');
       handleNotify('Opened the live order queue.', 'info');
       return;
     }
 
+    if (view === 'pos') {
+      triggerContextAction();
+      return;
+    }
+
     if (view === 'inventory') {
-      handleNotify('Product intake drawer is ready for API wiring.', 'info');
+      triggerContextAction();
       return;
     }
 
     if (view === 'orders') {
-      handleNotify('Picklist sent to the back-office printer.', 'success');
+      triggerContextAction();
       return;
     }
 
     if (view === 'customers') {
-      handleNotify('Customer intake form primed for a new trade account.', 'info');
+      triggerContextAction();
       return;
     }
 
     if (view === 'reports') {
-      handleNotify('PDF export queued. Replace with your reporting endpoint when the API is ready.', 'success');
+      triggerContextAction();
       return;
     }
 
     if (view === 'suppliers') {
-      handleNotify('Draft purchase order created for Hager Electric.', 'success');
+      triggerContextAction();
       return;
     }
 

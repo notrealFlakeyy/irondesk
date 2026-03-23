@@ -1,8 +1,9 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useEffectEvent, useMemo, useState } from 'react';
 import { Printer, Truck } from 'lucide-react';
 import { Badge, Btn, Mono } from '@/components/ui';
+import { openPrintWindow } from '@/lib/browser-utils';
 import { useAppState } from '@/lib/app-state';
 import { fmt, orderStatusLabel } from '@/lib/utils';
 import { ToastTone, View } from '@/types';
@@ -38,6 +39,59 @@ export default function OrdersView({
 
   const lineItems = selectedOrder ? orderItems[selectedOrder.id] ?? [] : [];
   const timeline = selectedOrder ? orderTimelines[selectedOrder.id] ?? [] : [];
+
+  const printOrder = () => {
+    if (!selectedOrder) return;
+    openPrintWindow(
+      selectedOrder.id,
+      `
+        <h1>Customer Order ${selectedOrder.id}</h1>
+        <p class="meta">Customer: ${selectedOrder.customer}</p>
+        <p class="meta">Status: ${orderStatusLabel(selectedOrder.status)} / Due ${selectedOrder.due}</p>
+        <p class="meta">Total: <span class="accent">${fmt(selectedOrder.total)}</span></p>
+        <div class="section">
+          <h2>Line Items</h2>
+          <table>
+            <thead><tr><th>SKU</th><th>Product</th><th>Qty</th><th>Unit Price</th><th>Total</th><th>Status</th></tr></thead>
+            <tbody>
+              ${lineItems
+                .map(
+                  (item) =>
+                    `<tr><td class="mono">${item.sku}</td><td>${item.name}</td><td class="mono">${item.qty}</td><td class="mono">${fmt(item.unitPrice)}</td><td class="mono accent">${fmt(item.qty * item.unitPrice)}</td><td>${item.status}</td></tr>`
+                )
+                .join('')}
+            </tbody>
+          </table>
+        </div>
+        <div class="section">
+          <h2>Timeline</h2>
+          ${timeline
+            .map(
+              (event) =>
+                `<p><strong>${event.label}</strong>${event.time ? ` <span class="meta">/ ${event.time}</span>` : ''}</p>`
+            )
+            .join('')}
+        </div>
+      `
+    );
+    onNotify(`Opened a printable order sheet for ${selectedOrder.id}.`, 'success');
+  };
+
+  const onContextAction = useEffectEvent((view?: View) => {
+    if (view === 'orders') {
+      printOrder();
+    }
+  });
+
+  useEffect(() => {
+    const handleContextAction = (event: Event) => {
+      const detail = (event as CustomEvent<{ view?: View }>).detail;
+      onContextAction(detail?.view);
+    };
+
+    window.addEventListener('irondesk:context-action', handleContextAction);
+    return () => window.removeEventListener('irondesk:context-action', handleContextAction);
+  }, []);
 
   if (!selectedOrder) return null;
 
@@ -88,9 +142,28 @@ export default function OrdersView({
             <Badge variant={orderTone[selectedOrder.status]} className="px-3 py-1 text-[11px]">
               {orderStatusLabel(selectedOrder.status)}
             </Badge>
-            <Btn size="sm" onClick={() => onNotify(`Print job queued for ${selectedOrder.id}.`, 'success')}>
+            <Btn size="sm" onClick={printOrder}>
               <Printer className="h-3.5 w-3.5" />
               Print
+            </Btn>
+            <Btn
+              size="sm"
+              disabled={selectedOrder.status === 'ready' || selectedOrder.status === 'paid' || updatingStatus}
+              onClick={() => {
+                setUpdatingStatus(true);
+                void (async () => {
+                  try {
+                    await updateOrderStatus(selectedOrder.id, 'ready');
+                    onNotify(`${selectedOrder.id} marked ready and customer alerts queued.`, 'success');
+                  } catch (error) {
+                    onNotify(error instanceof Error ? error.message : 'Failed to update the order.', 'info');
+                  } finally {
+                    setUpdatingStatus(false);
+                  }
+                })();
+              }}
+            >
+              {updatingStatus && selectedOrder.status !== 'paid' ? 'Updating...' : 'Mark Ready'}
             </Btn>
             <Btn
               size="sm"

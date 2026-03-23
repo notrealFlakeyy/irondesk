@@ -1,6 +1,10 @@
 import type {
   AppSettings,
   Category,
+  HeldCartStatus,
+  IntegrationProvider,
+  IntegrationRunStatus,
+  PurchaseOrderStatus,
   CustomerPurchase,
   OrderLineItem,
   OrderStatus,
@@ -70,6 +74,93 @@ export interface Database {
         };
         Relationships: [];
       };
+      held_cart_items: {
+        Row: {
+          cat: Category;
+          held_cart_id: string;
+          min_stock: number;
+          name: string;
+          owner_id: string;
+          position: number;
+          price: number;
+          qty: number;
+          row_id: number;
+          sku: string;
+          stock: number;
+          supplier: string | null;
+        };
+        Insert: {
+          cat: Category;
+          held_cart_id: string;
+          min_stock: number;
+          name: string;
+          owner_id?: string;
+          position: number;
+          price: number;
+          qty: number;
+          row_id?: number;
+          sku: string;
+          stock: number;
+          supplier?: string | null;
+        };
+        Update: {
+          cat?: Category;
+          held_cart_id?: string;
+          min_stock?: number;
+          name?: string;
+          owner_id?: string;
+          position?: number;
+          price?: number;
+          qty?: number;
+          row_id?: number;
+          sku?: string;
+          stock?: number;
+          supplier?: string | null;
+        };
+        Relationships: [];
+      };
+      held_carts: {
+        Row: {
+          created_at: string;
+          customer_id: string | null;
+          customer_name: string;
+          id: string;
+          item_count: number;
+          label: string;
+          note: string | null;
+          owner_id: string;
+          row_id: number;
+          status: HeldCartStatus;
+          total: number;
+        };
+        Insert: {
+          created_at?: string;
+          customer_id?: string | null;
+          customer_name: string;
+          id: string;
+          item_count: number;
+          label: string;
+          note?: string | null;
+          owner_id?: string;
+          row_id?: number;
+          status?: HeldCartStatus;
+          total: number;
+        };
+        Update: {
+          created_at?: string;
+          customer_id?: string | null;
+          customer_name?: string;
+          id?: string;
+          item_count?: number;
+          label?: string;
+          note?: string | null;
+          owner_id?: string;
+          row_id?: number;
+          status?: HeldCartStatus;
+          total?: number;
+        };
+        Relationships: [];
+      };
       customers: {
         Row: {
           balance: number;
@@ -81,6 +172,7 @@ export interface Database {
           loyalty_points: number | null;
           name: string;
           owner_id: string;
+          phone: string | null;
           row_id: number;
           terms: string | null;
           total_spent: number;
@@ -96,6 +188,7 @@ export interface Database {
           loyalty_points?: number | null;
           name: string;
           owner_id?: string;
+          phone?: string | null;
           row_id?: number;
           terms?: string | null;
           total_spent?: number;
@@ -111,10 +204,50 @@ export interface Database {
           loyalty_points?: number | null;
           name?: string;
           owner_id?: string;
+          phone?: string | null;
           row_id?: number;
           terms?: string | null;
           total_spent?: number;
           type?: 'trade' | 'retail';
+        };
+        Relationships: [];
+      };
+      integration_runs: {
+        Row: {
+          created_at: string;
+          event: string;
+          id: string;
+          message: string;
+          owner_id: string;
+          provider: IntegrationProvider;
+          reference: string | null;
+          row_id: number;
+          status: IntegrationRunStatus;
+          target_id: string | null;
+        };
+        Insert: {
+          created_at?: string;
+          event: string;
+          id: string;
+          message: string;
+          owner_id?: string;
+          provider: IntegrationProvider;
+          reference?: string | null;
+          row_id?: number;
+          status: IntegrationRunStatus;
+          target_id?: string | null;
+        };
+        Update: {
+          created_at?: string;
+          event?: string;
+          id?: string;
+          message?: string;
+          owner_id?: string;
+          provider?: IntegrationProvider;
+          reference?: string | null;
+          row_id?: number;
+          status?: IntegrationRunStatus;
+          target_id?: string | null;
         };
         Relationships: [];
       };
@@ -181,6 +314,108 @@ export interface Database {
           row_id?: number;
           state?: TimelineEvent['state'];
           time_text?: string;
+        };
+        Relationships: [];
+      };
+      purchase_order_items: {
+        Row: {
+          name: string;
+          owner_id: string;
+          position: number;
+          purchase_order_id: string;
+          qty: number;
+          row_id: number;
+          sku: string;
+          unit_cost: number;
+        };
+        Insert: {
+          name: string;
+          owner_id?: string;
+          position: number;
+          purchase_order_id: string;
+          qty: number;
+          row_id?: number;
+          sku: string;
+          unit_cost: number;
+        };
+        Update: {
+          name?: string;
+          owner_id?: string;
+          position?: number;
+          purchase_order_id?: string;
+          qty?: number;
+          row_id?: number;
+          sku?: string;
+          unit_cost?: number;
+        };
+        Relationships: [];
+      };
+      purchase_orders: {
+        Row: {
+          created_at: string;
+          expected_date: string;
+          id: string;
+          item_count: number;
+          owner_id: string;
+          row_id: number;
+          status: PurchaseOrderStatus;
+          supplier_id: string;
+          supplier_name: string;
+          total: number;
+        };
+        Insert: {
+          created_at?: string;
+          expected_date: string;
+          id: string;
+          item_count: number;
+          owner_id?: string;
+          row_id?: number;
+          status: PurchaseOrderStatus;
+          supplier_id: string;
+          supplier_name: string;
+          total: number;
+        };
+        Update: {
+          created_at?: string;
+          expected_date?: string;
+          id?: string;
+          item_count?: number;
+          owner_id?: string;
+          row_id?: number;
+          status?: PurchaseOrderStatus;
+          supplier_id?: string;
+          supplier_name?: string;
+          total?: number;
+        };
+        Relationships: [];
+      };
+      register_notes: {
+        Row: {
+          author: string;
+          body: string;
+          created_at: string;
+          id: string;
+          owner_id: string;
+          register_label: string;
+          row_id: number;
+        };
+        Insert: {
+          author: string;
+          body: string;
+          created_at?: string;
+          id: string;
+          owner_id?: string;
+          register_label: string;
+          row_id?: number;
+        };
+        Update: {
+          author?: string;
+          body?: string;
+          created_at?: string;
+          id?: string;
+          owner_id?: string;
+          register_label?: string;
+          row_id?: number;
         };
         Relationships: [];
       };

@@ -1,6 +1,6 @@
 'use client';
 
-import { useDeferredValue, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import { Badge, Btn, Input, Mono, Select, Table, TD, TR } from '@/components/ui';
 import { useAppState } from '@/lib/app-state';
 import { CATEGORIES } from '@/lib/data';
@@ -39,6 +39,8 @@ export default function InventoryView({
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [draftProduct, setDraftProduct] = useState<Product>(emptyProduct);
   const [savingProduct, setSavingProduct] = useState(false);
+  const [importingCsv, setImportingCsv] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const deferredSearch = useDeferredValue(search);
 
   const filteredProducts = useMemo(() => {
@@ -111,8 +113,113 @@ export default function InventoryView({
     })();
   };
 
+  const parseCsvRows = (content: string) => {
+    const lines = content
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    if (lines.length < 2) {
+      throw new Error('CSV file must include a header row and at least one product row.');
+    }
+
+    const splitLine = (line: string) => line.split(',').map((cell) => cell.trim().replace(/^"|"$/g, ''));
+    const headers = splitLine(lines[0]).map((header) => header.toLowerCase());
+    const requiredHeaders = ['sku', 'name', 'price', 'stock', 'cat', 'min'];
+
+    for (const header of requiredHeaders) {
+      if (!headers.includes(header)) {
+        throw new Error(`CSV is missing required column "${header}".`);
+      }
+    }
+
+    return lines.slice(1).map((line, index) => {
+      const cells = splitLine(line);
+      const getValue = (header: string) => cells[headers.indexOf(header)] ?? '';
+      const rawCategory = getValue('cat').toLowerCase();
+      const categoryMatch = CATEGORIES.find(
+        (item) => item.id !== 'all' && (item.id === rawCategory || item.label.toLowerCase() === rawCategory)
+      );
+
+      if (!categoryMatch || categoryMatch.id === 'all') {
+        throw new Error(`Row ${index + 2} has an unknown category "${getValue('cat')}".`);
+      }
+
+      return {
+        sku: getValue('sku').toUpperCase(),
+        name: getValue('name'),
+        price: Number(getValue('price')),
+        stock: Number(getValue('stock')),
+        cat: categoryMatch.id,
+        min: Number(getValue('min')),
+        supplier: getValue('supplier') || undefined,
+      } satisfies Product;
+    });
+  };
+
+  const importCsv = (file: File) => {
+    setImportingCsv(true);
+
+    void file
+      .text()
+      .then(async (content) => {
+        const rows = parseCsvRows(content);
+        let added = 0;
+        let updated = 0;
+
+        for (const row of rows) {
+          if (products.some((product) => product.sku === row.sku)) {
+            await updateProduct(row);
+            updated += 1;
+          } else {
+            await addProduct(row);
+            added += 1;
+          }
+        }
+
+        onNotify(`Imported ${rows.length} products. Added ${added}, updated ${updated}.`, 'success');
+      })
+      .catch((error: unknown) => {
+        onNotify(error instanceof Error ? error.message : 'Failed to import the CSV file.', 'info');
+      })
+      .finally(() => {
+        setImportingCsv(false);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
+      });
+  };
+
+  const onContextAction = useEffectEvent((view?: View) => {
+    if (view === 'inventory') {
+      openAddModal();
+    }
+  });
+
+  useEffect(() => {
+    const handleContextAction = (event: Event) => {
+      const detail = (event as CustomEvent<{ view?: View }>).detail;
+      onContextAction(detail?.view);
+    };
+
+    window.addEventListener('irondesk:context-action', handleContextAction);
+    return () => window.removeEventListener('irondesk:context-action', handleContextAction);
+  }, []);
+
   return (
     <div className="flex h-full flex-col overflow-hidden">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".csv,text/csv"
+        className="hidden"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) {
+            importCsv(file);
+          }
+        }}
+      />
       <div className="flex flex-col gap-2.5 border-b bg-[var(--bg2)] px-5 py-3.5 xl:flex-row xl:items-center">
         <Input
           placeholder="Search inventory by SKU, product or supplier"
@@ -137,8 +244,8 @@ export default function InventoryView({
           <Btn variant="primary" onClick={openAddModal}>
             Add Product
           </Btn>
-          <Btn onClick={() => onNotify('CSV import wiring is still pending an external file parser.', 'info')}>
-            Import CSV
+          <Btn onClick={() => fileInputRef.current?.click()} disabled={importingCsv}>
+            {importingCsv ? 'Importing...' : 'Import CSV'}
           </Btn>
         </div>
       </div>

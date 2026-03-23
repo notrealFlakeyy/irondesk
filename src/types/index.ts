@@ -20,6 +20,10 @@ export type View =
 export type PaymentMethod = 'card' | 'cash' | 'invoice';
 export type ToastTone = 'success' | 'info';
 export type OrderStatus = 'ready' | 'paid' | 'pending' | 'processing';
+export type PurchaseOrderStatus = 'draft' | 'sent' | 'received';
+export type HeldCartStatus = 'held';
+export type IntegrationProvider = 'stripe' | 'twilio' | 'xero' | 'woocommerce' | 'quickbooks';
+export type IntegrationRunStatus = 'success' | 'failed' | 'skipped';
 export type StockState = 'ok' | 'low' | 'out';
 export type FilingCycle = 'Monthly' | 'Quarterly' | 'Annually';
 export type ReceiptWidth = '80mm' | '58mm';
@@ -57,6 +61,14 @@ export interface CheckoutCartParams {
   discountRate?: number;
 }
 
+export interface HoldCartParams {
+  cart: CartItem[];
+  customerId?: string;
+  label: string;
+  note?: string;
+  total: number;
+}
+
 export interface CreateSpecialOrderParams {
   cart: CartItem[];
   customerId?: string;
@@ -67,6 +79,7 @@ export interface Customer {
   id: string;
   name: string;
   email: string;
+  phone?: string;
   type: 'trade' | 'retail';
   totalSpent: number;
   lastPurchase: string;
@@ -96,6 +109,56 @@ export interface Supplier {
   skus: number;
   monthlySpend: number;
   onTimeRate: number;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  supplierId: string;
+  supplierName: string;
+  createdAt: string;
+  expectedDate: string;
+  status: PurchaseOrderStatus;
+  total: number;
+  itemCount: number;
+}
+
+export interface PurchaseOrderItem {
+  sku: string;
+  name: string;
+  qty: number;
+  unitCost: number;
+}
+
+export interface HeldCart {
+  id: string;
+  label: string;
+  customerId?: string;
+  customerName: string;
+  note?: string;
+  createdAt: string;
+  itemCount: number;
+  total: number;
+  status: HeldCartStatus;
+}
+
+export interface RegisterNote {
+  id: string;
+  body: string;
+  createdAt: string;
+  author: string;
+  registerLabel: string;
+}
+
+export interface CreatePurchaseOrderParams {
+  supplierId: string;
+  status?: PurchaseOrderStatus;
+  items: PurchaseOrderItem[];
+}
+
+export interface CreateRegisterNoteParams {
+  body: string;
+  author?: string;
+  registerLabel?: string;
 }
 
 export interface Transaction {
@@ -186,9 +249,21 @@ export interface StaffPerformanceRow {
 }
 
 export interface Integration {
+  provider: IntegrationProvider;
   name: string;
   hint: string;
   connected: boolean;
+}
+
+export interface IntegrationRun {
+  id: string;
+  provider: IntegrationProvider;
+  event: string;
+  targetId?: string;
+  status: IntegrationRunStatus;
+  message: string;
+  reference?: string;
+  createdAt: string;
 }
 
 export interface StoreInfoSettings {
@@ -233,10 +308,16 @@ export interface AppData {
   customers: Customer[];
   orders: Order[];
   suppliers: Supplier[];
+  purchaseOrders: PurchaseOrder[];
+  heldCarts: HeldCart[];
+  registerNotes: RegisterNote[];
+  integrationRuns: IntegrationRun[];
   transactions: Transaction[];
   transactionLines: Record<string, CartItem[]>;
   customerPurchases: Record<string, CustomerPurchase[]>;
   orderItems: Record<string, OrderLineItem[]>;
   orderTimelines: Record<string, TimelineEvent[]>;
+  purchaseOrderItems: Record<string, PurchaseOrderItem[]>;
+  heldCartItems: Record<string, CartItem[]>;
   settings: AppSettings;
 }

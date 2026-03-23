@@ -6,9 +6,14 @@ import {
   Customer,
   CustomerPurchase,
   Integration,
+  HeldCart,
+  IntegrationRun,
   Order,
   OrderLineItem,
+  PurchaseOrder,
+  PurchaseOrderItem,
   Product,
+  RegisterNote,
   SettingsSection,
   StaffPerformanceRow,
   Supplier,
@@ -52,11 +57,11 @@ export const PRODUCTS: Product[] = [
 ];
 
 export const CUSTOMERS: Customer[] = [
-  { id: 'c1', name: 'Bakker Contracting', email: 'p.bakker@bakkercontract.nl', type: 'trade', totalSpent: 28440, lastPurchase: '23 Mar 2026', balance: -892, creditLimit: 5000, loyaltyPoints: 2844, terms: 'Net 30' },
-  { id: 'c2', name: 'De Vries Bouw', email: 'info@devries-bouw.nl', type: 'trade', totalSpent: 14820, lastPurchase: '21 Mar 2026', balance: 0, creditLimit: 3000, loyaltyPoints: 1482, terms: 'Net 30' },
-  { id: 'c3', name: 'Visser Electric', email: 'r.visser@visserelec.nl', type: 'trade', totalSpent: 9310, lastPurchase: '17 Mar 2026', balance: -440, creditLimit: 2000, loyaltyPoints: 931, terms: 'Net 14' },
-  { id: 'c4', name: 'J. Smit', email: 'j.smit@gmail.com', type: 'retail', totalSpent: 1240, lastPurchase: '21 Mar 2026', balance: 0, loyaltyPoints: 124 },
-  { id: 'c5', name: 'H. Müller', email: 'h.muller@web.de', type: 'retail', totalSpent: 680, lastPurchase: '18 Mar 2026', balance: 0, loyaltyPoints: 68 },
+  { id: 'c1', name: 'Bakker Contracting', email: 'p.bakker@bakkercontract.nl', phone: '+31610234001', type: 'trade', totalSpent: 28440, lastPurchase: '23 Mar 2026', balance: -892, creditLimit: 5000, loyaltyPoints: 2844, terms: 'Net 30' },
+  { id: 'c2', name: 'De Vries Bouw', email: 'info@devries-bouw.nl', phone: '+31610234002', type: 'trade', totalSpent: 14820, lastPurchase: '21 Mar 2026', balance: 0, creditLimit: 3000, loyaltyPoints: 1482, terms: 'Net 30' },
+  { id: 'c3', name: 'Visser Electric', email: 'r.visser@visserelec.nl', phone: '+31610234003', type: 'trade', totalSpent: 9310, lastPurchase: '17 Mar 2026', balance: -440, creditLimit: 2000, loyaltyPoints: 931, terms: 'Net 14' },
+  { id: 'c4', name: 'J. Smit', email: 'j.smit@gmail.com', phone: '+31610234004', type: 'retail', totalSpent: 1240, lastPurchase: '21 Mar 2026', balance: 0, loyaltyPoints: 124 },
+  { id: 'c5', name: 'H. Müller', email: 'h.muller@web.de', phone: '+31610234005', type: 'retail', totalSpent: 680, lastPurchase: '18 Mar 2026', balance: 0, loyaltyPoints: 68 },
 ];
 
 export const ORDERS: Order[] = [
@@ -215,11 +220,96 @@ export const CUSTOMER_PURCHASES: Record<string, CustomerPurchase[]> = {
 };
 
 export const SETTINGS_INTEGRATIONS: Integration[] = [
-  { name: 'Xero Accounting', hint: 'Sync sales and invoices automatically', connected: true },
-  { name: 'Stripe Terminal', hint: 'Card reader integration for countertop checkout', connected: true },
-  { name: 'Twilio SMS', hint: 'Send order-ready notifications by SMS', connected: false },
-  { name: 'WooCommerce', hint: 'Sync online and in-store inventory', connected: false },
-  { name: 'QuickBooks', hint: 'Alternative accounting sync', connected: false },
+  { provider: 'xero', name: 'Xero Accounting', hint: 'Sync sales and invoices automatically', connected: true },
+  { provider: 'stripe', name: 'Stripe Terminal', hint: 'Card reader integration for countertop checkout', connected: true },
+  { provider: 'twilio', name: 'Twilio SMS', hint: 'Send order-ready notifications by SMS', connected: false },
+  { provider: 'woocommerce', name: 'WooCommerce', hint: 'Sync online and in-store inventory', connected: false },
+  { provider: 'quickbooks', name: 'QuickBooks', hint: 'Alternative accounting sync', connected: false },
+];
+
+export const INTEGRATION_RUNS: IntegrationRun[] = [
+  {
+    id: 'SYNC-0001',
+    provider: 'stripe',
+    event: 'payment',
+    targetId: 'R-0847',
+    status: 'success',
+    message: 'Card payment settled in terminal sandbox.',
+    reference: 'pi_demo_0847',
+    createdAt: '2026-03-23T14:32:04.000Z',
+  },
+  {
+    id: 'SYNC-0002',
+    provider: 'xero',
+    event: 'sales_sync',
+    targetId: 'R-0846',
+    status: 'success',
+    message: 'Trade invoice exported to Xero.',
+    reference: 'xero-inv-2046',
+    createdAt: '2026-03-23T14:18:11.000Z',
+  },
+  {
+    id: 'SYNC-0003',
+    provider: 'twilio',
+    event: 'order_ready_sms',
+    targetId: 'ORD-2041',
+    status: 'skipped',
+    message: 'SMS disabled for this workspace.',
+    createdAt: '2026-03-23T08:40:00.000Z',
+  },
+];
+
+export const HELD_CARTS: HeldCart[] = [
+  {
+    id: 'HOLD-0001',
+    label: 'Counter Quote / Bakker',
+    customerId: 'c1',
+    customerName: 'Bakker Contracting',
+    note: 'Waiting for site manager approval on cable run.',
+    createdAt: '2026-03-23T09:14:00.000Z',
+    itemCount: 5,
+    total: 214.6,
+    status: 'held',
+  },
+  {
+    id: 'HOLD-0002',
+    label: 'Walk-in Paint Mix',
+    customerName: 'Walk-in',
+    note: 'Customer stepped out to confirm quantity.',
+    createdAt: '2026-03-23T10:48:00.000Z',
+    itemCount: 3,
+    total: 58.44,
+    status: 'held',
+  },
+];
+
+export const HELD_CART_ITEMS: Record<string, CartItem[]> = {
+  'HOLD-0001': [
+    { ...PRODUCTS[5], qty: 2 },
+    { ...PRODUCTS[10], qty: 5 },
+    { ...PRODUCTS[17], qty: 1 },
+  ],
+  'HOLD-0002': [
+    { ...PRODUCTS[15], qty: 2 },
+    { ...PRODUCTS[16], qty: 3 },
+  ],
+};
+
+export const REGISTER_NOTES: RegisterNote[] = [
+  {
+    id: 'NOTE-0001',
+    body: 'Cash drawer reconciled after morning float. No variance.',
+    createdAt: '2026-03-23T08:12:00.000Z',
+    author: 'Marcus J.',
+    registerLabel: 'Register 1',
+  },
+  {
+    id: 'NOTE-0002',
+    body: 'Trade account signatures enabled for invoice sales after 14:00.',
+    createdAt: '2026-03-23T13:05:00.000Z',
+    author: 'Sarah K.',
+    registerLabel: 'Register 1',
+  },
 ];
 
 export const INITIAL_SETTINGS: AppSettings = {
@@ -288,11 +378,17 @@ export function createInitialAppData(): AppData {
       customers: CUSTOMERS,
       orders: ORDERS,
       suppliers: SUPPLIERS,
+      purchaseOrders: [] as PurchaseOrder[],
+      heldCarts: HELD_CARTS,
+      registerNotes: REGISTER_NOTES,
+      integrationRuns: INTEGRATION_RUNS,
       transactions: TRANSACTIONS,
       transactionLines: TRANSACTION_LINES,
       customerPurchases: CUSTOMER_PURCHASES,
       orderItems: ORDER_ITEMS,
       orderTimelines: ORDER_TIMELINES,
+      purchaseOrderItems: {} as Record<string, PurchaseOrderItem[]>,
+      heldCartItems: HELD_CART_ITEMS,
       settings: INITIAL_SETTINGS,
     })
   ) as AppData;

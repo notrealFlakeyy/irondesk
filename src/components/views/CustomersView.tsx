@@ -1,6 +1,6 @@
 'use client';
 
-import { useDeferredValue, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useEffectEvent, useMemo, useState } from 'react';
 import { Badge, Btn, Input, Mono, Select, Table, TD, TR } from '@/components/ui';
 import { useAppState } from '@/lib/app-state';
 import { fmt } from '@/lib/utils';
@@ -18,6 +18,7 @@ const emptyCustomer = (): Customer => ({
   id: '',
   name: '',
   email: '',
+  phone: '',
   type: 'retail',
   totalSpent: 0,
   lastPurchase: 'No purchases yet',
@@ -79,6 +80,7 @@ export default function CustomersView({
       id: `c${Date.now()}`,
       name: draftCustomer.name.trim(),
       email: draftCustomer.email.trim(),
+      phone: draftCustomer.phone?.trim() || undefined,
       terms: draftCustomer.type === 'trade' ? draftCustomer.terms || 'Net 30' : undefined,
       creditLimit: draftCustomer.type === 'trade' ? Number(draftCustomer.creditLimit ?? 0) : undefined,
       loyaltyPoints: Number(draftCustomer.loyaltyPoints ?? 0),
@@ -101,6 +103,22 @@ export default function CustomersView({
       }
     })();
   };
+
+  const onContextAction = useEffectEvent((view?: View) => {
+    if (view === 'customers') {
+      openAddCustomer();
+    }
+  });
+
+  useEffect(() => {
+    const handleContextAction = (event: Event) => {
+      const detail = (event as CustomEvent<{ view?: View }>).detail;
+      onContextAction(detail?.view);
+    };
+
+    window.addEventListener('irondesk:context-action', handleContextAction);
+    return () => window.removeEventListener('irondesk:context-action', handleContextAction);
+  }, []);
 
   if (!selectedCustomer) return null;
 
@@ -131,6 +149,9 @@ export default function CustomersView({
                 <TD>
                   <div className="text-[13px] text-[var(--text)]">{customer.name}</div>
                   <div className="mt-1 font-mono-iron text-[11px] text-[var(--text3)]">{customer.email}</div>
+                  {customer.phone ? (
+                    <div className="mt-1 font-mono-iron text-[11px] text-[var(--text3)]">{customer.phone}</div>
+                  ) : null}
                 </TD>
                 <TD>
                   <Badge variant={customer.type === 'trade' ? 'trade' : 'green'}>
@@ -174,6 +195,9 @@ export default function CustomersView({
                       : 'Retail'}
                   </Badge>
                 </div>
+                {selectedCustomer.phone ? (
+                  <div className="mt-2 font-mono-iron text-[11px] text-[var(--text3)]">{selectedCustomer.phone}</div>
+                ) : null}
               </div>
             </div>
           </div>
@@ -250,6 +274,12 @@ export default function CustomersView({
                 placeholder="Email"
                 value={draftCustomer.email}
                 onChange={(event) => setDraftCustomer((current) => ({ ...current, email: event.target.value }))}
+                className="sm:col-span-2"
+              />
+              <Input
+                placeholder="Phone"
+                value={draftCustomer.phone ?? ''}
+                onChange={(event) => setDraftCustomer((current) => ({ ...current, phone: event.target.value }))}
                 className="sm:col-span-2"
               />
               <Select
