@@ -1,0 +1,93 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0f0f0e;
+  --bg2: #181816;
+  --bg3: #1f1f1d;
+  --bg4: #272724;
+  --bg5: #2e2e2b;
+  --border: #363632;
+  --border2: #444440;
+  --text: #e8e6e0;
+  --text2: #a8a69f;
+  --text3: #6b6960;
+  --accent: #e8a020;
+  --accent2: #c07010;
+  --red: #d94040;
+  --green: #4a9e6a;
+  --blue: #4a7eb5;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+* {
+  box-sizing: border-box;
+  border-color: var(--border);
+}
+
+::selection {
+  background: rgba(232, 160, 32, 0.28);
+  color: var(--text);
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body), sans-serif;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.font-display {
+  font-family: var(--font-display), sans-serif;
+}
+
+.font-mono-iron {
+  font-family: var(--font-mono), monospace;
+}
+
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg2);
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--border2);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text3);
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-view {
+  animation: fadeInUp 150ms ease-out;
+}
