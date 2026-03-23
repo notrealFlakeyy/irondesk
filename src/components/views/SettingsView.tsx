@@ -13,11 +13,12 @@ export default function SettingsView({
   onNav: (view: View) => void;
   onNotify: (message: string, tone?: ToastTone) => void;
 }) {
-  const { settings, updateSettings, resetData } = useAppState();
+  const { settings, updateSettings, resetData, seedDemoData } = useAppState();
   const [activeSection, setActiveSection] = useState<SettingsSection>('Store Info');
   const [draftSettings, setDraftSettings] = useState<AppSettings>(settings);
   const [savingSettings, setSavingSettings] = useState(false);
   const [resettingData, setResettingData] = useState(false);
+  const [seedingDemoData, setSeedingDemoData] = useState(false);
 
   useEffect(() => {
     setDraftSettings(settings);
@@ -408,13 +409,31 @@ export default function SettingsView({
         {renderSection()}
         <div className="mt-5 flex justify-end gap-2">
           <Btn
-            disabled={resettingData || savingSettings}
+            disabled={resettingData || savingSettings || seedingDemoData}
+            onClick={() => {
+              setSeedingDemoData(true);
+              void (async () => {
+                try {
+                  await seedDemoData();
+                  onNotify('Loaded the IronDesk demo workspace for this account.', 'success');
+                } catch (error) {
+                  onNotify(error instanceof Error ? error.message : 'Failed to load demo data.', 'info');
+                } finally {
+                  setSeedingDemoData(false);
+                }
+              })();
+            }}
+          >
+            {seedingDemoData ? 'Loading Demo...' : 'Load Demo Data'}
+          </Btn>
+          <Btn
+            disabled={resettingData || savingSettings || seedingDemoData}
             onClick={() => {
               setResettingData(true);
               void (async () => {
                 try {
                   await resetData();
-                  onNotify('Supabase demo data reset to the original seed set.', 'success');
+                  onNotify('Cleared the current workspace data.', 'success');
                 } catch (error) {
                   onNotify(error instanceof Error ? error.message : 'Failed to reset demo data.', 'info');
                 } finally {
@@ -423,11 +442,11 @@ export default function SettingsView({
               })();
             }}
           >
-            {resettingData ? 'Resetting...' : 'Reset Data'}
+            {resettingData ? 'Clearing...' : 'Clear Data'}
           </Btn>
           <Btn
             variant="primary"
-            disabled={savingSettings || resettingData}
+            disabled={savingSettings || resettingData || seedingDemoData}
             onClick={() => {
               setSavingSettings(true);
               void (async () => {

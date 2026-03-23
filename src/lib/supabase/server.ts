@@ -1,25 +1,44 @@
-import { createClient } from '@supabase/supabase-js';
+import { createServerClient } from '@supabase/ssr';
+import { cookies } from 'next/headers';
+import type { User } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
+import { getSupabasePublishableKey, getSupabaseUrl } from '@/lib/supabase/config';
 
-function requireEnv(name: string, value: string | undefined) {
-  if (!value) {
-    throw new Error(`Missing Supabase environment variable: ${name}`);
-  }
+export async function createSupabaseServerClient() {
+  const cookieStore = await cookies();
 
-  return value;
-}
-
-export function createSupabaseAdminClient() {
-  const url = requireEnv('NEXT_PUBLIC_SUPABASE_URL', process.env.NEXT_PUBLIC_SUPABASE_URL);
-  const key = requireEnv(
-    'SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY',
-    process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY
-  );
-
-  return createClient<Database>(url, key, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
+  return createServerClient<Database>(getSupabaseUrl(), getSupabasePublishableKey(), {
+    cookies: {
+      getAll() {
+        return cookieStore.getAll();
+      },
+      setAll(cookiesToSet) {
+        try {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            cookieStore.set(name, value, options);
+          });
+        } catch {
+          // Server components cannot always mutate cookies. Middleware handles refreshes.
+        }
+      },
     },
   });
+}
+
+export async function requireAuthenticatedUser() {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+
+  if (error) {
+    throw new Error(`Failed to resolve the Supabase user: ${error.message}`);
+  }
+
+  if (!user) {
+    throw new Error('Unauthorized');
+  }
+
+  return { supabase, user: user as User };
 }

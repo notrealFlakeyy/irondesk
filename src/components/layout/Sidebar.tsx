@@ -1,16 +1,6 @@
 'use client';
 
-import {
-  BarChart3,
-  Boxes,
-  ClipboardList,
-  LayoutDashboard,
-  Settings2,
-  ShoppingCart,
-  Truck,
-  Users,
-  X,
-} from 'lucide-react';
+import { BarChart3, Boxes, ClipboardList, LayoutDashboard, LogOut, Settings2, ShoppingCart, Truck, Users, X } from 'lucide-react';
 import { SectionLabel } from '@/components/ui';
 import { cn } from '@/lib/utils';
 import { View } from '@/types';
@@ -42,14 +32,24 @@ interface SidebarProps {
   onNav: (view: View) => void;
   open: boolean;
   onClose: () => void;
+  userEmail: string;
+  onSignOut: () => void;
+  signingOut?: boolean;
 }
 
-export default function Sidebar({ active, onNav, open, onClose }: SidebarProps) {
+export default function Sidebar({ active, onNav, open, onClose, userEmail, onSignOut, signingOut = false }: SidebarProps) {
   const sections = [
     { key: 'ops', label: 'Operations' },
     { key: 'stock', label: 'Stock' },
     { key: 'biz', label: 'Business' },
   ];
+  const initials = userEmail
+    .split(/[@.\s_-]+/)
+    .filter(Boolean)
+    .map((part) => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
 
   return (
     <aside
@@ -64,7 +64,7 @@ export default function Sidebar({ active, onNav, open, onClose }: SidebarProps) 
             IronDesk
           </div>
           <div className="mt-1 font-mono-iron text-[10px] uppercase tracking-[0.15em] text-[var(--text3)]">
-            POS / DEMO BUILD
+            POS / AUTH READY
           </div>
         </div>
         <button
@@ -115,14 +115,23 @@ export default function Sidebar({ active, onNav, open, onClose }: SidebarProps) 
       <div className="border-t px-[18px] py-3.5">
         <div className="flex items-center gap-2.5">
           <div className="flex h-[30px] w-[30px] items-center justify-center rounded-sm border border-[var(--border2)] bg-[var(--bg4)] font-display text-[13px] font-bold text-[var(--accent)]">
-            MJ
+            {initials || 'ID'}
           </div>
-          <div>
-            <div className="text-[13px] font-medium text-[var(--text)]">Marcus J.</div>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[13px] font-medium text-[var(--text)]">{userEmail}</div>
             <div className="font-mono-iron text-[10px] uppercase tracking-[0.14em] text-[var(--text3)]">
-              MANAGER
+              AUTHENTICATED USER
             </div>
           </div>
+          <button
+            type="button"
+            onClick={onSignOut}
+            disabled={signingOut}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-sm border border-[var(--border2)] bg-[var(--bg4)] text-[var(--text2)] transition-colors hover:border-[var(--text3)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-50"
+            aria-label="Sign out"
+          >
+            <LogOut className="h-4 w-4" />
+          </button>
         </div>
       </div>
     </aside>

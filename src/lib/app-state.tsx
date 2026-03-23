@@ -17,7 +17,7 @@ type AppStateContextValue = AppData & {
   hydrated: boolean;
   syncing: boolean;
   backendError: string | null;
-  dataSource: 'seed' | 'supabase';
+  dataSource: 'empty' | 'supabase';
   refreshData: () => Promise<void>;
   checkoutCart: (params: CheckoutCartParams) => Promise<{ receiptId: string; total: number }>;
   createSpecialOrder: (params: CreateSpecialOrderParams) => Promise<{ orderId: string; total: number }>;
@@ -27,6 +27,7 @@ type AppStateContextValue = AppData & {
   addCustomer: (customer: Customer) => Promise<void>;
   addSupplier: (supplier: Supplier) => Promise<void>;
   updateSettings: (settings: AppSettings) => Promise<void>;
+  seedDemoData: () => Promise<void>;
   resetData: () => Promise<void>;
 };
 
@@ -39,7 +40,19 @@ type ApiEnvelope<T> = {
 const AppStateContext = createContext<AppStateContextValue | null>(null);
 
 function cloneInitialState() {
-  return createInitialAppData();
+  const initial = createInitialAppData();
+  return {
+    ...initial,
+    products: [],
+    customers: [],
+    orders: [],
+    suppliers: [],
+    transactions: [],
+    transactionLines: {},
+    customerPurchases: {},
+    orderItems: {},
+    orderTimelines: {},
+  };
 }
 
 async function requestJson<T>(input: string, init?: RequestInit) {
@@ -73,7 +86,7 @@ export function AppStateProvider({ children }: PropsWithChildren) {
   const [hydrated, setHydrated] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [backendError, setBackendError] = useState<string | null>(null);
-  const [dataSource, setDataSource] = useState<'seed' | 'supabase'>('seed');
+  const [dataSource, setDataSource] = useState<'empty' | 'supabase'>('empty');
 
   const refreshData = useCallback(async () => {
     setSyncing(true);
@@ -85,7 +98,7 @@ export function AppStateProvider({ children }: PropsWithChildren) {
       setDataSource('supabase');
     } catch (error) {
       setBackendError(error instanceof Error ? error.message : 'Failed to sync with Supabase.');
-      setDataSource('seed');
+      setDataSource('empty');
     } finally {
       setHydrated(true);
       setSyncing(false);
@@ -266,6 +279,25 @@ export function AppStateProvider({ children }: PropsWithChildren) {
     }
   }, []);
 
+  const seedDemoData = useCallback(async () => {
+    setSyncing(true);
+
+    try {
+      const payload = await requestJson<AppData>('/api/demo/seed', {
+        method: 'POST',
+      });
+      setData(payload.data);
+      setBackendError(null);
+      setDataSource('supabase');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to load the demo workspace.';
+      setBackendError(message);
+      throw new Error(message);
+    } finally {
+      setSyncing(false);
+    }
+  }, []);
+
   const resetData = useCallback(async () => {
     setSyncing(true);
 
@@ -301,6 +333,7 @@ export function AppStateProvider({ children }: PropsWithChildren) {
       addCustomer,
       addSupplier,
       updateSettings,
+      seedDemoData,
       resetData,
     }),
     [
@@ -315,6 +348,7 @@ export function AppStateProvider({ children }: PropsWithChildren) {
       hydrated,
       refreshData,
       resetData,
+      seedDemoData,
       syncing,
       updateOrderStatus,
       updateProduct,

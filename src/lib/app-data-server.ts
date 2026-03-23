@@ -1,5 +1,5 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { createInitialAppData } from '@/lib/data';
-import { createSupabaseAdminClient } from '@/lib/supabase/server';
 import type {
   AppData,
   AppSettings,
@@ -16,6 +16,7 @@ import type {
 } from '@/types';
 import type { Database } from '@/types/database';
 
+type AppSupabaseClient = SupabaseClient<Database>;
 type Tables = Database['public']['Tables'];
 
 type ProductRow = Tables['products']['Row'];
@@ -36,6 +37,7 @@ type TransactionLineRow = Tables['transaction_lines']['Row'];
 type TransactionLineInsert = Tables['transaction_lines']['Insert'];
 type CustomerPurchaseRow = Tables['customer_purchases']['Row'];
 type CustomerPurchaseInsert = Tables['customer_purchases']['Insert'];
+type SettingsRow = Tables['app_settings']['Row'];
 type SettingsInsert = Tables['app_settings']['Insert'];
 
 const DATE_MONTHS = {
@@ -100,6 +102,10 @@ function parseDateLabel(value: string) {
   return new Date(Date.UTC(Number(year), month, Number(day), 12, 0, 0));
 }
 
+function toSettingsPayload(settings: AppSettings): SettingsInsert['payload'] {
+  return settings as unknown as SettingsInsert['payload'];
+}
+
 function toErrorMessage(error: unknown, fallback: string) {
   if (error instanceof Error && error.message) {
     return error.message;
@@ -108,20 +114,10 @@ function toErrorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
-function toSettingsPayload(settings: AppSettings): SettingsInsert['payload'] {
-  return settings as unknown as SettingsInsert['payload'];
-}
-
 function throwSupabaseError(
   error: { message: string; details?: string | null; hint?: string | null },
   context: string
 ): never {
-  if (error.message.includes('does not exist') || error.message.includes('relation')) {
-    throw new Error(
-      'Supabase is missing the IronDesk tables. Run supabase/migrations/20260323_init_irondesk.sql in your project, then reload the app.'
-    );
-  }
-
   const details = [error.message, error.details, error.hint].filter(Boolean).join(' ');
   throw new Error(`${context}: ${details}`);
 }
@@ -241,35 +237,86 @@ function groupRows<T, TValue>(rows: T[], key: (row: T) => string, mapper: (row: 
   }, {});
 }
 
-async function deleteAllRows() {
-  const supabase = createSupabaseAdminClient();
+async function loadCustomer(supabase: AppSupabaseClient, customerId: string) {
+  const { data, error } = await supabase.from('customers').select('*').eq('id', customerId).maybeSingle();
+  if (error) {
+    throwSupabaseError(error, 'Failed to load customer');
+  }
 
+  return (data as CustomerRow | null) ?? null;
+}
+
+async function loadSettings(supabase: AppSupabaseClient) {
+  const { data, error } = await supabase.from('app_settings').select('*').maybeSingle();
+  if (error) {
+    throwSupabaseError(error, 'Failed to load app settings');
+  }
+
+  return ((data as SettingsRow | null)?.payload as AppSettings | undefined) ?? createInitialAppData().settings;
+}
+
+async function updateProductsStock(
+  supabase: AppSupabaseClient,
+  cart: CartItem[],
+  mode: 'decrement_when_available' | 'decrement_always'
+) {
+  const skus = cart.map((item) => item.sku);
+  const { data, error } = await supabase.from('products').select('*').in('sku', skus);
+  if (error) {
+    throwSupabaseError(error, 'Failed to load products for stock update');
+  }
+
+  const productRows = (data ?? []) as ProductRow[];
+  const currentProducts = new Map(productRows.map((product) => [product.sku, product]));
+
+  for (const item of cart) {
+    const product = currentProducts.get(item.sku);
+    if (!product) continue;
+
+    const nextStock =
+      mode === 'decrement_when_available'
+        ? product.stock < item.qty
+          ? product.stock
+          : product.stock - item.qty
+        : Math.max(0, product.stock - item.qty);
+
+    const { error: updateError } = await supabase.from('products').update({ stock: nextStock }).eq('sku', item.sku);
+    if (updateError) {
+      throwSupabaseError(updateError, `Failed to update stock for ${item.sku}`);
+    }
+  }
+
+  return currentProducts;
+}
+
+async function clearWorkspaceData(supabase: AppSupabaseClient, userId: string) {
   const deleteSteps = [
-    async () => supabase.from('customer_purchases').delete().not('id', 'is', null),
-    async () => supabase.from('order_timeline_events').delete().not('id', 'is', null),
-    async () => supabase.from('order_items').delete().not('id', 'is', null),
-    async () => supabase.from('transaction_lines').delete().not('id', 'is', null),
-    async () => supabase.from('transactions').delete().not('id', 'is', null),
-    async () => supabase.from('orders').delete().not('id', 'is', null),
-    async () => supabase.from('products').delete().not('sku', 'is', null),
-    async () => supabase.from('suppliers').delete().not('id', 'is', null),
-    async () => supabase.from('customers').delete().not('id', 'is', null),
-    async () => supabase.from('app_settings').delete().not('id', 'is', null),
+    async () => supabase.from('customer_purchases').delete().eq('owner_id', userId),
+    async () => supabase.from('order_timeline_events').delete().eq('owner_id', userId),
+    async () => supabase.from('order_items').delete().eq('owner_id', userId),
+    async () => supabase.from('transaction_lines').delete().eq('owner_id', userId),
+    async () => supabase.from('transactions').delete().eq('owner_id', userId),
+    async () => supabase.from('orders').delete().eq('owner_id', userId),
+    async () => supabase.from('products').delete().eq('owner_id', userId),
+    async () => supabase.from('suppliers').delete().eq('owner_id', userId),
+    async () => supabase.from('customers').delete().eq('owner_id', userId),
+    async () => supabase.from('app_settings').delete().eq('owner_id', userId),
   ];
 
   for (const remove of deleteSteps) {
     const { error } = await remove();
     if (error) {
-      throwSupabaseError(error, 'Failed to reset demo data');
+      throwSupabaseError(error, 'Failed to clear the current workspace');
     }
   }
 }
 
-async function seedDemoData() {
-  const supabase = createSupabaseAdminClient();
+export async function seedDemoWorkspace(supabase: AppSupabaseClient, userId: string) {
+  await clearWorkspaceData(supabase, userId);
   const seed = createInitialAppData();
 
   const products: ProductInsert[] = seed.products.map((product) => ({
+    owner_id: userId,
     sku: product.sku,
     name: product.name,
     price: product.price,
@@ -280,6 +327,7 @@ async function seedDemoData() {
   }));
 
   const customers: CustomerInsert[] = seed.customers.map((customer) => ({
+    owner_id: userId,
     id: customer.id,
     name: customer.name,
     email: customer.email,
@@ -293,6 +341,7 @@ async function seedDemoData() {
   }));
 
   const suppliers: SupplierInsert[] = seed.suppliers.map((supplier) => ({
+    owner_id: userId,
     id: supplier.id,
     name: supplier.name,
     category: supplier.category,
@@ -304,6 +353,7 @@ async function seedDemoData() {
   }));
 
   const orders: OrderInsert[] = seed.orders.map((order) => ({
+    owner_id: userId,
     id: order.id,
     customer: order.customer,
     customer_id: order.customerId ?? null,
@@ -317,6 +367,7 @@ async function seedDemoData() {
 
   const orderItems: OrderItemInsert[] = Object.entries(seed.orderItems).flatMap(([orderId, items]) =>
     items.map((item, position) => ({
+      owner_id: userId,
       order_id: orderId,
       position,
       sku: item.sku,
@@ -329,6 +380,7 @@ async function seedDemoData() {
 
   const timelineEvents: TimelineInsert[] = Object.entries(seed.orderTimelines).flatMap(([orderId, events]) =>
     events.map((event, position) => ({
+      owner_id: userId,
       order_id: orderId,
       position,
       label: event.label,
@@ -338,6 +390,7 @@ async function seedDemoData() {
   );
 
   const transactions: TransactionInsert[] = seed.transactions.map((transaction) => ({
+    owner_id: userId,
     id: transaction.id,
     customer: transaction.customer,
     customer_id: transaction.customerId ?? null,
@@ -351,6 +404,7 @@ async function seedDemoData() {
   const transactionLines: TransactionLineInsert[] = Object.entries(seed.transactionLines).flatMap(
     ([transactionId, lines]) =>
       lines.map((line, position) => ({
+        owner_id: userId,
         transaction_id: transactionId,
         position,
         sku: line.sku,
@@ -367,6 +421,7 @@ async function seedDemoData() {
   const customerPurchases: CustomerPurchaseInsert[] = Object.entries(seed.customerPurchases).flatMap(
     ([customerId, purchases]) =>
       purchases.map((purchase, index) => ({
+        owner_id: userId,
         customer_id: customerId,
         purchase_id: purchase.id,
         date_label: purchase.date,
@@ -377,59 +432,35 @@ async function seedDemoData() {
   );
 
   const settings: SettingsInsert = {
-    id: 'default',
+    owner_id: userId,
     payload: toSettingsPayload(seed.settings),
     updated_at: new Date().toISOString(),
   };
 
   const inserts = [
-    supabase.from('products').upsert(products, { onConflict: 'sku' }),
-    supabase.from('customers').upsert(customers, { onConflict: 'id' }),
-    supabase.from('suppliers').upsert(suppliers, { onConflict: 'id' }),
-    supabase.from('orders').upsert(orders, { onConflict: 'id' }),
-    supabase.from('order_items').upsert(orderItems, { onConflict: 'order_id,position' }),
-    supabase.from('order_timeline_events').upsert(timelineEvents, { onConflict: 'order_id,position' }),
-    supabase.from('transactions').upsert(transactions, { onConflict: 'id' }),
-    supabase.from('transaction_lines').upsert(transactionLines, { onConflict: 'transaction_id,position' }),
-    supabase.from('customer_purchases').upsert(customerPurchases, { onConflict: 'customer_id,purchase_id' }),
-    supabase.from('app_settings').upsert(settings, { onConflict: 'id' }),
+    supabase.from('products').insert(products),
+    supabase.from('customers').insert(customers),
+    supabase.from('suppliers').insert(suppliers),
+    supabase.from('orders').insert(orders),
+    supabase.from('order_items').insert(orderItems),
+    supabase.from('order_timeline_events').insert(timelineEvents),
+    supabase.from('transactions').insert(transactions),
+    supabase.from('transaction_lines').insert(transactionLines),
+    supabase.from('customer_purchases').insert(customerPurchases),
+    supabase.from('app_settings').insert(settings),
   ];
 
   const results = await Promise.all(inserts);
-
   for (const result of results) {
     if (result.error) {
-      throwSupabaseError(result.error, 'Failed to seed IronDesk demo data');
+      throwSupabaseError(result.error, 'Failed to load demo data into this workspace');
     }
   }
+
+  return { data: await loadAppData(supabase) };
 }
 
-let ensureSeedPromise: Promise<void> | null = null;
-
-async function ensureSeeded() {
-  if (!ensureSeedPromise) {
-    ensureSeedPromise = (async () => {
-      const supabase = createSupabaseAdminClient();
-      const { count, error } = await supabase.from('products').select('sku', { count: 'exact', head: true });
-      if (error) {
-        throwSupabaseError(error, 'Failed to inspect IronDesk products');
-      }
-
-      if (!count) {
-        await seedDemoData();
-      }
-    })().finally(() => {
-      ensureSeedPromise = null;
-    });
-  }
-
-  await ensureSeedPromise;
-}
-
-export async function loadAppData(): Promise<AppData> {
-  await ensureSeeded();
-  const supabase = createSupabaseAdminClient();
-
+export async function loadAppData(supabase: AppSupabaseClient): Promise<AppData> {
   const [
     productsResult,
     customersResult,
@@ -451,7 +482,7 @@ export async function loadAppData(): Promise<AppData> {
     supabase.from('transactions').select('*').order('timestamp', { ascending: false }),
     supabase.from('transaction_lines').select('*').order('transaction_id').order('position'),
     supabase.from('customer_purchases').select('*').order('created_at', { ascending: false }),
-    supabase.from('app_settings').select('*').eq('id', 'default').maybeSingle(),
+    supabase.from('app_settings').select('*').maybeSingle(),
   ]);
 
   const resultSet = [
@@ -485,12 +516,7 @@ export async function loadAppData(): Promise<AppData> {
   const transactionRows = (transactionsResult.data ?? []) as TransactionRow[];
   const transactionLineRows = (transactionLinesResult.data ?? []) as TransactionLineRow[];
   const customerPurchaseRows = (customerPurchasesResult.data ?? []) as CustomerPurchaseRow[];
-  const settingsRow = (settingsResult.data ?? null) as Tables['app_settings']['Row'] | null;
-
-  const orderItems = groupRows(orderItemRows, (row) => row.order_id, serializeOrderItem);
-  const orderTimelines = groupRows(timelineRows, (row) => row.order_id, serializeTimelineEvent);
-  const transactionLines = groupRows(transactionLineRows, (row) => row.transaction_id, serializeTransactionLine);
-  const customerPurchases = groupRows(customerPurchaseRows, (row) => row.customer_id, serializeCustomerPurchase);
+  const settingsRow = (settingsResult.data ?? null) as SettingsRow | null;
 
   return {
     products: productRows.map(serializeProduct),
@@ -498,80 +524,22 @@ export async function loadAppData(): Promise<AppData> {
     orders: orderRows.map(serializeOrder),
     suppliers: supplierRows.map(serializeSupplier),
     transactions: transactionRows.map(serializeTransaction),
-    transactionLines,
-    customerPurchases,
-    orderItems,
-    orderTimelines,
+    transactionLines: groupRows(transactionLineRows, (row) => row.transaction_id, serializeTransactionLine),
+    customerPurchases: groupRows(customerPurchaseRows, (row) => row.customer_id, serializeCustomerPurchase),
+    orderItems: groupRows(orderItemRows, (row) => row.order_id, serializeOrderItem),
+    orderTimelines: groupRows(timelineRows, (row) => row.order_id, serializeTimelineEvent),
     settings: (settingsRow?.payload as AppSettings | undefined) ?? createInitialAppData().settings,
   };
 }
 
-async function loadCustomer(customerId: string) {
-  const supabase = createSupabaseAdminClient();
-  const { data, error } = await supabase.from('customers').select('*').eq('id', customerId).maybeSingle();
-  if (error) {
-    throwSupabaseError(error, 'Failed to load customer');
-  }
-  return (data as CustomerRow | null) ?? null;
-}
-
-async function loadSettings() {
-  const supabase = createSupabaseAdminClient();
-  const { data, error } = await supabase.from('app_settings').select('*').eq('id', 'default').maybeSingle();
-  if (error) {
-    throwSupabaseError(error, 'Failed to load app settings');
-  }
-
-  return ((data as Tables['app_settings']['Row'] | null)?.payload as AppSettings | undefined) ?? createInitialAppData().settings;
-}
-
-async function updateProductsStock(cart: CartItem[], mode: 'decrement_when_available' | 'decrement_always') {
-  const supabase = createSupabaseAdminClient();
-  const skus = cart.map((item) => item.sku);
-  const { data: products, error } = await supabase.from('products').select('*').in('sku', skus);
-  if (error) {
-    throwSupabaseError(error, 'Failed to load products for stock update');
-  }
-
-  const productRows = (products ?? []) as ProductRow[];
-  const currentProducts = new Map(productRows.map((product) => [product.sku, product]));
-
-  for (const item of cart) {
-    const product = currentProducts.get(item.sku);
-    if (!product) continue;
-
-    const nextStock =
-      mode === 'decrement_when_available'
-        ? product.stock < item.qty
-          ? product.stock
-          : product.stock - item.qty
-        : Math.max(0, product.stock - item.qty);
-
-    const { error: updateError } = await supabase
-      .from('products')
-      .update({ stock: nextStock })
-      .eq('sku', item.sku);
-
-    if (updateError) {
-      throwSupabaseError(updateError, `Failed to update stock for ${item.sku}`);
-    }
-  }
-
-  return currentProducts;
-}
-
-export async function checkoutCart(params: CheckoutCartParams) {
-  await ensureSeeded();
-  const supabase = createSupabaseAdminClient();
+export async function checkoutCart(supabase: AppSupabaseClient, params: CheckoutCartParams) {
   const now = new Date();
-  const settings = await loadSettings();
+  const settings = await loadSettings(supabase);
   const subtotal = params.cart.reduce((sum, item) => sum + item.price * item.qty, 0);
   const discount = subtotal * (params.discountRate ?? 0);
   const taxable = subtotal - discount;
   const total = Number((taxable + taxable * (settings.vatRate / 100)).toFixed(2));
-  const { data: existingTransactions, error: transactionIdError } = await supabase
-    .from('transactions')
-    .select('id');
+  const { data: existingTransactions, error: transactionIdError } = await supabase.from('transactions').select('id');
 
   if (transactionIdError) {
     throwSupabaseError(transactionIdError, 'Failed to generate receipt number');
@@ -581,8 +549,8 @@ export async function checkoutCart(params: CheckoutCartParams) {
     'R-',
     ((existingTransactions ?? []) as Array<Pick<TransactionRow, 'id'>>).map((transaction) => transaction.id)
   );
-  const customer = params.customerId ? await loadCustomer(params.customerId) : null;
-  await updateProductsStock(params.cart, 'decrement_always');
+  const customer = params.customerId ? await loadCustomer(supabase, params.customerId) : null;
+  await updateProductsStock(supabase, params.cart, 'decrement_always');
 
   const transactionInsert: TransactionInsert = {
     id: receiptId,
@@ -649,7 +617,7 @@ export async function checkoutCart(params: CheckoutCartParams) {
         status: params.paymentMethod === 'invoice' ? 'invoice' : 'paid',
         created_at: now.toISOString(),
       },
-      { onConflict: 'customer_id,purchase_id' }
+      { onConflict: 'owner_id,customer_id,purchase_id' }
     );
 
     if (purchaseError) {
@@ -658,7 +626,7 @@ export async function checkoutCart(params: CheckoutCartParams) {
   }
 
   return {
-    data: await loadAppData(),
+    data: await loadAppData(supabase),
     meta: {
       receiptId,
       total,
@@ -666,11 +634,9 @@ export async function checkoutCart(params: CheckoutCartParams) {
   };
 }
 
-export async function createSpecialOrder(params: CreateSpecialOrderParams) {
-  await ensureSeeded();
-  const supabase = createSupabaseAdminClient();
+export async function createSpecialOrder(supabase: AppSupabaseClient, params: CreateSpecialOrderParams) {
   const now = new Date();
-  const settings = await loadSettings();
+  const settings = await loadSettings(supabase);
   const subtotal = params.cart.reduce((sum, item) => sum + item.price * item.qty, 0);
   const total = Number((subtotal + subtotal * (settings.vatRate / 100)).toFixed(2));
   const { data: existingOrders, error: orderIdError } = await supabase.from('orders').select('id');
@@ -683,8 +649,8 @@ export async function createSpecialOrder(params: CreateSpecialOrderParams) {
     'ORD-',
     ((existingOrders ?? []) as Array<Pick<OrderRow, 'id'>>).map((order) => order.id)
   );
-  const customer = params.customerId ? await loadCustomer(params.customerId) : null;
-  const products = await updateProductsStock(params.cart, 'decrement_when_available');
+  const customer = params.customerId ? await loadCustomer(supabase, params.customerId) : null;
+  const products = await updateProductsStock(supabase, params.cart, 'decrement_when_available');
   const lineItems: OrderItemInsert[] = params.cart.map((item, position) => {
     const sourceProduct = products.get(item.sku);
     const status = (sourceProduct?.stock ?? 0) >= item.qty ? 'reserved' : 'backorder';
@@ -772,7 +738,7 @@ export async function createSpecialOrder(params: CreateSpecialOrderParams) {
         status: 'processing',
         created_at: now.toISOString(),
       },
-      { onConflict: 'customer_id,purchase_id' }
+      { onConflict: 'owner_id,customer_id,purchase_id' }
     );
 
     if (purchaseError) {
@@ -781,7 +747,7 @@ export async function createSpecialOrder(params: CreateSpecialOrderParams) {
   }
 
   return {
-    data: await loadAppData(),
+    data: await loadAppData(supabase),
     meta: {
       orderId,
       total,
@@ -789,16 +755,15 @@ export async function createSpecialOrder(params: CreateSpecialOrderParams) {
   };
 }
 
-export async function updateOrderStatus(orderId: string, status: Order['status']) {
-  await ensureSeeded();
-  const supabase = createSupabaseAdminClient();
+export async function updateOrderStatus(supabase: AppSupabaseClient, orderId: string, status: Order['status']) {
   const now = new Date();
 
-  const { data: order, error: orderError } = await supabase.from('orders').select('*').eq('id', orderId).maybeSingle();
+  const { data, error: orderError } = await supabase.from('orders').select('*').eq('id', orderId).maybeSingle();
   if (orderError) {
     throwSupabaseError(orderError, 'Failed to load order');
   }
-  const orderRow = (order as OrderRow | null) ?? null;
+
+  const orderRow = (data as OrderRow | null) ?? null;
   if (!orderRow) {
     throw new Error(`Order ${orderId} was not found.`);
   }
@@ -809,7 +774,7 @@ export async function updateOrderStatus(orderId: string, status: Order['status']
   }
 
   if (status === 'paid' && orderRow.customer_id && orderRow.status !== 'paid') {
-    const customer = await loadCustomer(orderRow.customer_id);
+    const customer = await loadCustomer(supabase, orderRow.customer_id);
     if (customer) {
       const { error: customerError } = await supabase
         .from('customers')
@@ -833,7 +798,7 @@ export async function updateOrderStatus(orderId: string, status: Order['status']
           status: 'paid',
           created_at: now.toISOString(),
         },
-        { onConflict: 'customer_id,purchase_id' }
+        { onConflict: 'owner_id,customer_id,purchase_id' }
       );
 
       if (purchaseError) {
@@ -842,7 +807,7 @@ export async function updateOrderStatus(orderId: string, status: Order['status']
     }
   }
 
-  const { data: timelineRows, error: timelineError } = await supabase
+  const { data: timelineData, error: timelineError } = await supabase
     .from('order_timeline_events')
     .select('*')
     .eq('order_id', orderId)
@@ -852,16 +817,11 @@ export async function updateOrderStatus(orderId: string, status: Order['status']
     throwSupabaseError(timelineError, 'Failed to load order timeline');
   }
 
-  const currentTimelineRows = (timelineRows ?? []) as TimelineRow[];
-
-  const updates = currentTimelineRows
+  const timelineRows = (timelineData ?? []) as TimelineRow[];
+  const updates = timelineRows
     .filter((entry) => entry.state === 'active')
     .map((entry) =>
-      supabase
-        .from('order_timeline_events')
-        .update({ state: 'done' })
-        .eq('order_id', orderId)
-        .eq('position', entry.position)
+      supabase.from('order_timeline_events').update({ state: 'done' }).eq('order_id', orderId).eq('position', entry.position)
     );
 
   const updateResults = await Promise.all(updates);
@@ -871,7 +831,7 @@ export async function updateOrderStatus(orderId: string, status: Order['status']
     }
   }
 
-  const nextPosition = currentTimelineRows.reduce((max, entry) => Math.max(max, entry.position), -1) + 1;
+  const nextPosition = timelineRows.reduce((max, entry) => Math.max(max, entry.position), -1) + 1;
   const label =
     status === 'paid'
       ? 'Collected and closed'
@@ -893,14 +853,10 @@ export async function updateOrderStatus(orderId: string, status: Order['status']
     throwSupabaseError(insertTimelineError, 'Failed to append order timeline');
   }
 
-  return {
-    data: await loadAppData(),
-  };
+  return { data: await loadAppData(supabase) };
 }
 
-export async function addProduct(product: Product) {
-  await ensureSeeded();
-  const supabase = createSupabaseAdminClient();
+export async function addProduct(supabase: AppSupabaseClient, product: Product) {
   const insert: ProductInsert = {
     sku: product.sku,
     name: product.name,
@@ -916,12 +872,10 @@ export async function addProduct(product: Product) {
     throwSupabaseError(error, 'Failed to add product');
   }
 
-  return { data: await loadAppData() };
+  return { data: await loadAppData(supabase) };
 }
 
-export async function updateProduct(product: Product) {
-  await ensureSeeded();
-  const supabase = createSupabaseAdminClient();
+export async function updateProduct(supabase: AppSupabaseClient, product: Product) {
   const { error } = await supabase
     .from('products')
     .update({
@@ -938,12 +892,10 @@ export async function updateProduct(product: Product) {
     throwSupabaseError(error, 'Failed to update product');
   }
 
-  return { data: await loadAppData() };
+  return { data: await loadAppData(supabase) };
 }
 
-export async function addCustomer(customer: Customer) {
-  await ensureSeeded();
-  const supabase = createSupabaseAdminClient();
+export async function addCustomer(supabase: AppSupabaseClient, customer: Customer) {
   const insert: CustomerInsert = {
     id: customer.id,
     name: customer.name,
@@ -962,12 +914,10 @@ export async function addCustomer(customer: Customer) {
     throwSupabaseError(error, 'Failed to add customer');
   }
 
-  return { data: await loadAppData() };
+  return { data: await loadAppData(supabase) };
 }
 
-export async function addSupplier(supplier: Supplier) {
-  await ensureSeeded();
-  const supabase = createSupabaseAdminClient();
+export async function addSupplier(supabase: AppSupabaseClient, supplier: Supplier) {
   const insert: SupplierInsert = {
     id: supplier.id,
     name: supplier.name,
@@ -984,32 +934,28 @@ export async function addSupplier(supplier: Supplier) {
     throwSupabaseError(error, 'Failed to add supplier');
   }
 
-  return { data: await loadAppData() };
+  return { data: await loadAppData(supabase) };
 }
 
-export async function updateSettings(settings: AppSettings) {
-  await ensureSeeded();
-  const supabase = createSupabaseAdminClient();
+export async function updateSettings(supabase: AppSupabaseClient, settings: AppSettings) {
   const { error } = await supabase.from('app_settings').upsert(
     {
-      id: 'default',
       payload: toSettingsPayload(settings),
       updated_at: new Date().toISOString(),
     },
-    { onConflict: 'id' }
+    { onConflict: 'owner_id' }
   );
 
   if (error) {
     throwSupabaseError(error, 'Failed to update settings');
   }
 
-  return { data: await loadAppData() };
+  return { data: await loadAppData(supabase) };
 }
 
-export async function resetDemoData() {
-  await deleteAllRows();
-  await seedDemoData();
-  return { data: await loadAppData() };
+export async function clearWorkspace(supabase: AppSupabaseClient, userId: string) {
+  await clearWorkspaceData(supabase, userId);
+  return { data: await loadAppData(supabase) };
 }
 
 export function toApiError(error: unknown, fallback: string) {

@@ -21,17 +21,17 @@ export interface Database {
     Tables: {
       app_settings: {
         Row: {
-          id: string;
+          owner_id: string;
           payload: Json;
           updated_at: string;
         };
         Insert: {
-          id?: string;
+          owner_id?: string;
           payload: Json;
           updated_at?: string;
         };
         Update: {
-          id?: string;
+          owner_id?: string;
           payload?: Json;
           updated_at?: string;
         };
@@ -39,30 +39,33 @@ export interface Database {
       };
       customer_purchases: {
         Row: {
-          id: number;
           amount: number;
           created_at: string;
           customer_id: string;
           date_label: string;
+          owner_id: string;
           purchase_id: string;
+          row_id: number;
           status: CustomerPurchase['status'];
         };
         Insert: {
-          id?: number;
           amount: number;
           created_at?: string;
           customer_id: string;
           date_label: string;
+          owner_id?: string;
           purchase_id: string;
+          row_id?: number;
           status: CustomerPurchase['status'];
         };
         Update: {
-          id?: number;
           amount?: number;
           created_at?: string;
           customer_id?: string;
           date_label?: string;
+          owner_id?: string;
           purchase_id?: string;
+          row_id?: number;
           status?: CustomerPurchase['status'];
         };
         Relationships: [];
@@ -77,6 +80,8 @@ export interface Database {
           last_purchase: string;
           loyalty_points: number | null;
           name: string;
+          owner_id: string;
+          row_id: number;
           terms: string | null;
           total_spent: number;
           type: 'trade' | 'retail';
@@ -90,6 +95,8 @@ export interface Database {
           last_purchase?: string;
           loyalty_points?: number | null;
           name: string;
+          owner_id?: string;
+          row_id?: number;
           terms?: string | null;
           total_spent?: number;
           type: 'trade' | 'retail';
@@ -103,6 +110,8 @@ export interface Database {
           last_purchase?: string;
           loyalty_points?: number | null;
           name?: string;
+          owner_id?: string;
+          row_id?: number;
           terms?: string | null;
           total_spent?: number;
           type?: 'trade' | 'retail';
@@ -111,31 +120,34 @@ export interface Database {
       };
       order_items: {
         Row: {
-          id: number;
           name: string;
           order_id: string;
+          owner_id: string;
           position: number;
           qty: number;
+          row_id: number;
           sku: string;
           status: OrderLineItem['status'];
           unit_price: number;
         };
         Insert: {
-          id?: number;
           name: string;
           order_id: string;
+          owner_id?: string;
           position: number;
           qty: number;
+          row_id?: number;
           sku: string;
           status: OrderLineItem['status'];
           unit_price: number;
         };
         Update: {
-          id?: number;
           name?: string;
           order_id?: string;
+          owner_id?: string;
           position?: number;
           qty?: number;
+          row_id?: number;
           sku?: string;
           status?: OrderLineItem['status'];
           unit_price?: number;
@@ -144,26 +156,29 @@ export interface Database {
       };
       order_timeline_events: {
         Row: {
-          id: number;
           label: string;
           order_id: string;
+          owner_id: string;
           position: number;
+          row_id: number;
           state: TimelineEvent['state'];
           time_text: string;
         };
         Insert: {
-          id?: number;
           label: string;
           order_id: string;
+          owner_id?: string;
           position: number;
+          row_id?: number;
           state: TimelineEvent['state'];
           time_text?: string;
         };
         Update: {
-          id?: number;
           label?: string;
           order_id?: string;
+          owner_id?: string;
           position?: number;
+          row_id?: number;
           state?: TimelineEvent['state'];
           time_text?: string;
         };
@@ -178,6 +193,8 @@ export interface Database {
           deposit: number | null;
           due_label: string;
           id: string;
+          owner_id: string;
+          row_id: number;
           status: OrderStatus;
           total: number;
         };
@@ -189,6 +206,8 @@ export interface Database {
           deposit?: number | null;
           due_label: string;
           id: string;
+          owner_id?: string;
+          row_id?: number;
           status: OrderStatus;
           total: number;
         };
@@ -200,6 +219,8 @@ export interface Database {
           deposit?: number | null;
           due_label?: string;
           id?: string;
+          owner_id?: string;
+          row_id?: number;
           status?: OrderStatus;
           total?: number;
         };
@@ -211,7 +232,9 @@ export interface Database {
           created_at: string;
           min_stock: number;
           name: string;
+          owner_id: string;
           price: number;
+          row_id: number;
           sku: string;
           stock: number;
           supplier: string | null;
@@ -221,7 +244,9 @@ export interface Database {
           created_at?: string;
           min_stock: number;
           name: string;
+          owner_id?: string;
           price: number;
+          row_id?: number;
           sku: string;
           stock: number;
           supplier?: string | null;
@@ -231,7 +256,9 @@ export interface Database {
           created_at?: string;
           min_stock?: number;
           name?: string;
+          owner_id?: string;
           price?: number;
+          row_id?: number;
           sku?: string;
           stock?: number;
           supplier?: string | null;
@@ -248,6 +275,8 @@ export interface Database {
           monthly_spend: number;
           name: string;
           on_time_rate: number;
+          owner_id: string;
+          row_id: number;
           skus: number;
         };
         Insert: {
@@ -259,6 +288,8 @@ export interface Database {
           monthly_spend: number;
           name: string;
           on_time_rate: number;
+          owner_id?: string;
+          row_id?: number;
           skus: number;
         };
         Update: {
@@ -270,6 +301,8 @@ export interface Database {
           monthly_spend?: number;
           name?: string;
           on_time_rate?: number;
+          owner_id?: string;
+          row_id?: number;
           skus?: number;
         };
         Relationships: [];
@@ -277,12 +310,13 @@ export interface Database {
       transaction_lines: {
         Row: {
           cat: Category;
-          id: number;
           min_stock: number;
           name: string;
+          owner_id: string;
           position: number;
           price: number;
           qty: number;
+          row_id: number;
           sku: string;
           stock: number;
           supplier: string | null;
@@ -290,12 +324,13 @@ export interface Database {
         };
         Insert: {
           cat: Category;
-          id?: number;
           min_stock: number;
           name: string;
+          owner_id?: string;
           position: number;
           price: number;
           qty: number;
+          row_id?: number;
           sku: string;
           stock: number;
           supplier?: string | null;
@@ -303,12 +338,13 @@ export interface Database {
         };
         Update: {
           cat?: Category;
-          id?: number;
           min_stock?: number;
           name?: string;
+          owner_id?: string;
           position?: number;
           price?: number;
           qty?: number;
+          row_id?: number;
           sku?: string;
           stock?: number;
           supplier?: string | null;
@@ -325,6 +361,8 @@ export interface Database {
           id: string;
           items: number;
           method: PaymentMethod;
+          owner_id: string;
+          row_id: number;
           timestamp: string;
         };
         Insert: {
@@ -335,6 +373,8 @@ export interface Database {
           id: string;
           items: number;
           method: PaymentMethod;
+          owner_id?: string;
+          row_id?: number;
           timestamp: string;
         };
         Update: {
@@ -345,6 +385,8 @@ export interface Database {
           id?: string;
           items?: number;
           method?: PaymentMethod;
+          owner_id?: string;
+          row_id?: number;
           timestamp?: string;
         };
         Relationships: [];
